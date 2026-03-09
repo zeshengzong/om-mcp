@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "om-metrics": {
+      "command": "python",
+      "args": ["server.py"]
+    }
+  }
+}

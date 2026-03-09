@@ -43,7 +43,9 @@ python -c "from server import mcp; print('ok')"
 
 输出 `ok` 说明安装成功。
 
-## 配置 Claude Desktop
+## 配置
+
+### Claude Desktop
 
 在 Claude Desktop 配置文件中添加 MCP 服务器：
 
@@ -55,17 +57,27 @@ python -c "from server import mcp; print('ok')"
 {
   "mcpServers": {
     "om-metrics": {
-      "command": "python",
-      "args": ["server.py"],
-      "cwd": "/path/to/om-mcp"
+      "command": "om-mcp"
     }
   }
 }
 ```
 
-**注意**：将 `/path/to/om-mcp` 替换为你实际克隆的目录绝对路径，例如 `/home/user/om-mcp` 或 `C:\Users\user\om-mcp`。
-
 重启 Claude Desktop 后即可使用。
+
+### Claude Code CLI
+
+在 `~/.claude/settings.json` 中添加 MCP 服务器配置：
+
+```json
+{
+  "mcpServers": {
+    "om-metrics": {
+      "command": "om-mcp"
+    }
+  }
+}
+```
 
 ## 使用方式
 
