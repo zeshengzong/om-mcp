@@ -48,11 +48,12 @@ METRIC_LABELS = {
 def register(mcp: FastMCP):
 
     @mcp.tool()
-    async def get_community_health(community: str) -> str:
+    async def get_community_health(community: str, date: str = "") -> str:
         """查询指定社区的健康度指标数据，返回综合评分及各子指标分数。
 
         Args:
             community: 社区名称，如 openEuler、MindSpore、CANN、openGauss 等，大小写不敏感。
+            date: 查询日期，格式 YYYY-MM-DD（可选），如 2026-03-05。不指定则返回最新数据。
         """
         key = community.strip().lower()
         api_community = COMMUNITY_MAP.get(key)
@@ -60,7 +61,11 @@ def register(mcp: FastMCP):
             available = ", ".join(sorted(COMMUNITY_MAP.keys()))
             return f"未找到社区 '{community}'，可用社区（小写）：{available}"
 
-        result = await get(f"/health/{api_community}/metric", params={"mode": "general"})
+        params = {"mode": "general"}
+        if date:
+            params["date"] = date
+
+        result = await get(f"/health/{api_community}/metric", params=params)
 
         if result.get("code") != 1:
             return f"API 返回错误：{result.get('message', '未知错误')}"

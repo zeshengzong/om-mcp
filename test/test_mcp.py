@@ -7,7 +7,8 @@ import asyncio
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(__file__))
+# 添加父目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # 直接 import 各 tool 模块中的函数（绕过 MCP 框架，直接调用底层 async 函数）
 from lib.http import get, post, extract_data, API_BASE_URL
