@@ -19,5 +19,9 @@ query_apis.register(mcp)
 cla_apis.register(mcp)
 project_apis.register(mcp)
 
-if __name__ == "__main__":
+def main():
+    """命令行入口函数"""
     mcp.run()
+
+if __name__ == "__main__":
+    main()
