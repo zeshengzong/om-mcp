@@ -38,7 +38,7 @@
   }, {
     "name" : "start",
     "value" : "1735689600000",
-    "description" : "查询范围开始时间",
+    "description" : "查询范围开始时间浮点数",
     "required" : false,
     "dataType" : "Long",
     "type" : null,
@@ -50,7 +50,7 @@
   }, {
     "name" : "end",
     "value" : "1745689600000",
-    "description" : "查询范围结束时间",
+    "description" : "查询范围结束时间浮点数",
     "required" : false,
     "dataType" : "Long",
     "type" : null,
