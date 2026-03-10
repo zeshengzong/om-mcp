@@ -20,108 +20,113 @@ om-mcp/
 │   └── http.py           # HTTP 请求封装
 ├── tools/
 │   ├── health.py         # 社区健康度
-│   ├── common.py         # 通用工具
-│   ├── server_apis.py    # 服务端 API
-│   ├── query_apis.py     # 查询 API
-│   ├── cla_apis.py       # CLA 相关 API
-│   ├── project_apis.py   # 项目 API
-│   └── general_apis.py   # 通用查询 API
-├── test/                 # 测试用例目录
-├── API_LIST.md          # 接口列表文档
-└── CLAUDE.md            # 本文件
+│   ├── common.py         # list_communities
+│   ├── server_apis.py    # get_community_list, get_metric_dict
+│   ├── query_apis.py     # get_issues_aggregate, get_prs_aggregate
+│   ├── cla_apis.py       # 空文件（接口已废弃）
+│   ├── project_apis.py   # 空文件（接口已废弃）
+│   └── general_apis.py   # 通用查询 API（8个有效接口）
+├── test/
+│   └── api_test_results.md   # 接口测试结果
+├── API_LIST.md           # 接口列表文档（13个有效接口）
+└── CLAUDE.md             # 本文件
 ```
+
+## 代码文件逻辑说明
+
+### server.py
+入口文件。导入并注册所有 tool 模块：
+```python
+import tools.health as health        # → health.register(mcp)
+import tools.common as common        # → common.register(mcp)
+import tools.server_apis as server_apis  # → server_apis.register(mcp)
+import tools.query_apis as query_apis    # → query_apis.register(mcp)
+import tools.project_apis as project_apis  # → project_apis.register(mcp)
+import tools.general_apis as general_apis  # → general_apis.register(mcp)
+```
+注意：`cla_apis.py` 未在 server.py 中注册。
+
+### lib/http.py
+HTTP 请求封装，提供三个核心函数：
+- `get(path, params)` — 异步 GET 请求
+- `post(path, body)` — 异步 POST 请求（JSON body）
+- `extract_data(result)` — 兼容单/双层嵌套的 data 提取
+
+### tools/health.py
+**接口**: `get_community_health(community, date="")`
+- 查询社区健康度综合评分及各子指标
+- 使用 `COMMUNITY_MAP` 做社区名称映射（支持别名）
+- HTTP: POST `/community/health`
+
+### tools/common.py
+**接口**: `list_communities()`
+- 返回所有支持查询的社区名称列表
+- 数据来源：health.py 中的 `COMMUNITY_MAP`
+
+### tools/server_apis.py
+**接口**:
+- `get_community_list()` — POST `/community/list`，返回所有社区列表
+- `get_metric_dict()` — GET `/dict/metric`，返回指标字典（120+ 条）
+
+### tools/query_apis.py
+**接口**:
+- `get_issues_aggregate(community, start_time, end_time, interval)` — POST `/query/issues/agg`
+- `get_prs_aggregate(community, start_time, end_time, interval)` — POST `/query/prs/agg`
+- 时间参数使用毫秒时间戳，内部用 `_date_to_ms()` 转换
+
+### tools/general_apis.py
+含 3 个辅助函数（不暴露为工具）：
+- `_date_to_ms(date_str)` — YYYY-MM-DD → 毫秒时间戳
+- `_build_time_body(start_date, end_date)` — 构建含时间戳的 body dict
+- `_fmt_page(data, item_formatter, label)` — 通用分页格式化
+
+**8个 MCP 接口**:
+
+| 接口 | HTTP 路径 |
+|------|-----------|
+| `get_forum_detail` | POST `/query/forum/detail/page` |
+| `get_issues_agg_page` | POST `/query/issues/agg` |
+| `get_issues_detail` | POST `/query/issues/detail` |
+| `get_issue_ref_pr` | POST `/query/issue/ref/pr` |
+| `get_prs_agg_page` | POST `/query/prs/agg` |
+| `get_prs_detail` | POST `/query/prs/detail` |
+| `get_contributes_topn` | POST `/query/contributes/topn/total` |
+| `get_filter_options` | POST `/query/filter` |
+
+### tools/cla_apis.py / tools/project_apis.py
+均为空文件（仅含 `def register(mcp): pass`），原有接口均已废弃。
+
+## 当前有效接口（13个）
+
+| 接口 | 所在文件 |
+|------|---------|
+| `get_community_health` | tools/health.py |
+| `list_communities` | tools/common.py |
+| `get_community_list` | tools/server_apis.py |
+| `get_metric_dict` | tools/server_apis.py |
+| `get_issues_aggregate` | tools/query_apis.py |
+| `get_prs_aggregate` | tools/query_apis.py |
+| `get_forum_detail` | tools/general_apis.py |
+| `get_issues_agg_page` | tools/general_apis.py |
+| `get_issues_detail` | tools/general_apis.py |
+| `get_issue_ref_pr` | tools/general_apis.py |
+| `get_prs_agg_page` | tools/general_apis.py |
+| `get_prs_detail` | tools/general_apis.py |
+| `get_contributes_topn` | tools/general_apis.py |
+| `get_filter_options` | tools/general_apis.py |
+
+详细参数说明见 `API_LIST.md`，测试结果见 `test/api_test_results.md`。
 
 ## 开发规范
 
-### 1. 添加新的 MCP 工具方法
+### 添加新的 MCP 工具方法
 
-当需要添加新的 MCP 工具方法时，必须遵循以下步骤：
+1. 在 `tools/` 下合适的模块中添加 `@mcp.tool()` 函数
+2. 如果是新模块，在 `server.py` 中注册
+3. 更新 `API_LIST.md` 和 `CLAUDE.md`（本文件的接口表格）
+4. 测试后记录结果到 `test/api_test_results.md`
 
-#### 步骤 1: 实现工具函数
-
-在 `tools/` 目录下的相应模块中添加工具函数：
-
-```python
-@mcp.tool()
-async def your_new_tool(param1: str = "", param2: str = "") -> str:
-    """
-    工具描述（中文）。
-
-    Args:
-        param1: 参数1说明
-        param2: 参数2说明
-    """
-    # 实现逻辑
-    pass
-```
-
-#### 步骤 2: 注册模块
-
-如果是新模块，在 `server.py` 中注册：
-
-```python
-import tools.your_module as your_module
-
-your_module.register(mcp)
-```
-
-#### 步骤 3: 更新接口文档
-
-在 `API_LIST.md` 中添加新接口的文档说明，包括：
-- 接口名称
-- 功能描述
-- 参数列表（类型、是否可选、默认值）
-- 返回值说明
-
-#### 步骤 4: 编写测试用例
-
-**必须为新接口编写测试用例**，在 `test/` 目录下创建或更新测试文件：
-
-```python
-# test/test_your_module.py
-# 测试问题: 描述测试场景
-# 预期结果: 描述预期返回的数据
-```
-
-#### 步骤 5: 执行测试并记录结果
-
-运行测试并将测试问题、返回结果记录到 `test/` 目录下的相应文件中。
-
-### 2. 测试规范
-
-#### 测试文件命名
-
-- 按功能模块组织：`test_<module_name>.md`
-- 例如：`test_issues.md`, `test_prs.md`, `test_cla.md`
-
-#### 测试内容格式
-
-每个测试用例应包含：
-
-```markdown
-## 接口名称: get_xxx
-
-### 测试用例 1
-**测试问题**: 查询 openEuler 社区的 XXX 数据
-**调用参数**:
-- community: openEuler
-- start_time: 2026-01-01
-- end_time: 2026-03-10
-
-**返回结果**:
-```
-<实际返回的数据>
-```
-
-**测试状态**: ✅ 通过 / ❌ 失败
-**测试时间**: 2026-03-10
-```
-
-### 3. 代码规范
-
-#### HTTP 请求
-
-使用 `lib/http.py` 中封装的方法：
+### 代码规范
 
 ```python
 from lib.http import get, post, extract_data
@@ -134,99 +139,33 @@ data = await post("/api/path", {"param": "value"})
 
 # 提取数据（自动处理双层嵌套）
 result = extract_data(data)
-```
 
-#### 时间参数处理
-
-- 对外接口使用 `YYYY-MM-DD` 格式
-- 内部 API 如需毫秒时间戳，使用 `_date_to_ms()` 转换
-
-```python
-from lib.http import _date_to_ms
-
-timestamp = _date_to_ms("2026-03-10")  # 转为毫秒时间戳
-```
-
-#### 社区名称处理
-
-社区名称大小写不敏感，统一转为小写处理：
-
-```python
+# 社区名称统一小写
 community = community.lower()
+
+# 时间转毫秒（general_apis.py 内部用）
+from tools.general_apis import _date_to_ms
+timestamp = _date_to_ms("2026-03-10")
 ```
 
-### 4. 文档维护
-
-#### API_LIST.md
-
-- 每次添加新接口必须更新此文档
-- 按功能分类组织
-- 包含完整的参数说明和返回值描述
-- 更新"更新记录"部分
-
-#### CLAUDE.md (本文件)
-
-- 记录项目架构变更
-- 更新开发规范
-- 记录重要的技术决策
-
-### 5. Git 提交规范
-
-提交信息格式：
+### Git 提交规范
 
 ```
 <type>: <subject>
-
-<body>
 ```
 
-类型 (type):
-- `feat`: 新功能
-- `fix`: 修复 bug
-- `docs`: 文档更新
-- `test`: 测试相关
-- `refactor`: 重构
-- `style`: 代码格式调整
-
-示例：
-```
-feat: 添加 get_xxx 接口
-
-- 实现 get_xxx 工具函数
-- 更新 API_LIST.md
-- 添加测试用例到 test/test_xxx.md
-```
+类型: `feat`/`fix`/`docs`/`test`/`refactor`/`style`
 
 ## 常见问题
 
-### Q: 如何调试 MCP 工具？
-
-A: 可以使用 MCP Inspector 或直接在代码中添加日志：
-
-```python
-import logging
-logging.info(f"Debug info: {data}")
-```
-
 ### Q: API 返回数据格式不一致怎么办？
-
 A: 使用 `extract_data()` 函数，它会自动处理单层和双层嵌套的 data 结构。
 
 ### Q: 如何处理可选参数？
-
-A: 使用默认值 `""` 或 `0`，在函数内部判断是否传入：
-
-```python
-async def tool(param: str = "") -> str:
-    if param:
-        # 使用 param
-    else:
-        # 不使用 param
-```
+A: 使用默认值 `""`，在函数内部用 `if param:` 判断是否传入。
 
 ## 参考资料
 
 - [FastMCP 文档](https://github.com/jlowin/fastmcp)
 - [MCP 协议规范](https://modelcontextprotocol.io/)
 - [项目 API 文档](./API_LIST.md)
-- [通用查询 API 说明](./通用查询/CLAUDE.md)
