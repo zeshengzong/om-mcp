@@ -87,7 +87,7 @@ merged_result AS (
                SUM(count) OVER (ORDER BY count DESC) AS running_total
         FROM user_count_merged
     ) t, total_merged
-    WHERE running_total - count < 0.3 * total_merged.s
+    WHERE running_total - count < 0.8 * total_merged.s
 ),
 user_count_comment AS (
     SELECT user_login, SUM(comment_incre) AS count
@@ -113,7 +113,7 @@ comment_result AS (
                SUM(count) OVER (ORDER BY count DESC) AS running_total
         FROM user_count_comment
     ) t, total_comment
-    WHERE running_total - count < 0.3 * total_comment.s
+    WHERE running_total - count < 0.8 * total_comment.s
 ),
 history_user AS (
     SELECT user_login FROM merged_result

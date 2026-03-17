@@ -176,8 +176,8 @@ A: 使用默认值 `""`，在函数内部用 `if param:` 判断是否传入。
 | 4 | 领域主流项目适配、集成、引用度 | `get_stats_itegration()` | `count` |
 | 5 | TOP开发者留存率 | `get_stats_user_retention()` | `ratio` |
 | 6 | YTD社区下载量 | `get_stats_year_download()` | `download` |
-| 7 | Issue首次响应时间（平均值、中位数）（天） | `get_query_issues_agg()` | `avg_first_reply_time`, `median_first_reply_time` |
-| 8 | Issue闭环时间（平均值、中位数）（天） | `get_query_issues_agg()` | `avg_close_time`, `median_closed_time` |
+| 7 | Issue首次响应时间（平均值、中位数）（天） | `get_stats_issue()` | `avg_first_reply_time`, `median_first_reply_time` |
+| 8 | Issue闭环时间（平均值、中位数）（天） | `get_stats_issue()` | `avg_close_time`, `median_closed_time` |
 | 9 | 论坛平均首次响应时间（平均值、中位数）（天） | `get_stats_forum()` | `avg_first_reply_time`, `median_first_reply_time` |
 | 10 | 论坛平均闭环时间（平均值、中位数）（天） | `get_stats_forum()` | `avg_closed_time`, `median_closed_time` |
 | 11 | 版本稳定发布偏差 | `get_stats_health_metric(metric=version_release)` | `avg` |
