@@ -220,11 +220,11 @@ if (community == 'cann'){
 }
 var sql = """
 SELECT
-        count(*) as count, 
-        ROUND((AVG(COALESCE(first_reply_time, 0)) / 86400.0)::NUMERIC, 2) AS avg_first_reply_time,
-        ROUND((AVG(COALESCE(closed_time, 0)) / 86400.0)::NUMERIC, 2) AS avg_closed_time,
-        ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY COALESCE(first_reply_time, 0)) / 86400.0)::NUMERIC, 2) AS median_first_reply_time,
-        ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY COALESCE(closed_time, open_time, 0)) / 86400.0)::NUMERIC, 2) AS median_closed_time
+      count(*) as count, 
+      ROUND((AVG(COALESCE(first_reply_time, 0)) / 86400.0)::NUMERIC, 2) AS avg_first_reply_time,
+      ROUND((AVG(COALESCE(closed_time, open_time, 0)) / 86400.0)::NUMERIC, 2) AS avg_closed_time,
+      ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY COALESCE(first_reply_time, 0)) / 86400.0)::NUMERIC, 2) AS median_first_reply_time,
+      ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY COALESCE(closed_time, open_time, 0)) / 86400.0)::NUMERIC, 2) AS median_closed_time
 FROM dws_${community}_contribute
 <where>
     contrib_type = 'issue' and is_hide is null and is_removed is null
