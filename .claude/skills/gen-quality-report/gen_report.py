@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-社区运营质量月度报告生成脚本
+社区运营质量周报/月报生成脚本
 
-Usage: python3 gen_report.py community1 community2 ...
-Output: 在 reports/ 目录下生成 {community}_community_quality_monthly_{YYYYMM}.md
+Usage: python3 gen_report.py [--period month|week] community1 community2 ...
+Output:
+- 月报: reports/{community}_community_quality_monthly_{YYYYMM}.md
+- 周报: reports/{community}_community_quality_weekly_{YYYY}W{WW}.md
 """
+import argparse
 import asyncio
 import httpx
 import json
 import sys
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from calendar import monthrange
 
 BASE_URL = "https://datastat.osinfra.cn/server"
@@ -18,6 +21,13 @@ REPORTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."
 
 
 # ─── 时间段计算 ───────────────────────────────────────────────────────────────
+
+def fmt_date(dt: datetime) -> str:
+    return f"{dt.year}年{dt.month}月{dt.day}日"
+
+
+def start_of_day_ms(dt: datetime) -> int:
+    return int(dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
 
 def month_range_ms(year: int, month: int):
     """返回某年月的首日00:00:00和末日23:59:59的毫秒时间戳（UTC）。"""
@@ -33,14 +43,130 @@ def month_last_day_ms(year: int, month: int):
     return int(datetime(year, month, last_day, tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def get_periods():
-    """
-    根据当前日期自动推算报告所需的三个时间段：
-    - prev:  上上个自然月（对比基准）
-    - last:  上一个自然月（主报告周期）
-    - curr:  当月截至今日（环比补充）
-    """
+def week_range_ms(year: int, week: int):
+    """返回某 ISO 周的周一00:00:00和周日23:59:59的毫秒时间戳（UTC）。"""
+    start_dt = datetime.fromisocalendar(year, week, 1).replace(tzinfo=timezone.utc)
+    end_dt = datetime.fromisocalendar(year, week, 7).replace(
+        hour=23, minute=59, second=59, microsecond=0, tzinfo=timezone.utc
+    )
+    return int(start_dt.timestamp() * 1000), int(end_dt.timestamp() * 1000)
+
+
+def week_last_day_ms(year: int, week: int):
+    """返回某 ISO 周周日00:00:00的毫秒时间戳（UTC）。用于单时间点 API。"""
+    sunday = datetime.fromisocalendar(year, week, 7).replace(tzinfo=timezone.utc)
+    return int(sunday.timestamp() * 1000)
+
+
+def build_month_period(year: int, month: int, start: int, end: int) -> dict:
+    last_day = monthrange(year, month)[1]
+    return {
+        "mode": "month",
+        "year": year,
+        "month": month,
+        "start": start,
+        "end": end,
+        "last_day_ms": month_last_day_ms(year, month),
+        "label": f"{month}月",
+        "range_label": f"{year}年{month}月1日 ～ {year}年{month}月{last_day}日",
+        "match_prefix": f"{year}-{month:02d}",
+    }
+
+
+def build_week_period(year: int, week: int, start: int, end: int) -> dict:
+    start_dt = datetime.fromtimestamp(start / 1000, tz=timezone.utc)
+    end_dt = datetime.fromtimestamp(end / 1000, tz=timezone.utc)
+    sunday_dt = datetime.fromisocalendar(year, week, 7).replace(tzinfo=timezone.utc)
+    return {
+        "mode": "week",
+        "year": year,
+        "week": week,
+        "start": start,
+        "end": end,
+        "last_day_ms": int(sunday_dt.timestamp() * 1000),
+        "label": f"{year}年W{week:02d}周",
+        "range_label": f"{fmt_date(start_dt)} ～ {fmt_date(end_dt)}",
+        "match_tokens": [
+            f"{year}-W{week:02d}",
+            f"{year}W{week:02d}",
+            f"{year}-{week:02d}",
+            start_dt.strftime("%Y-%m-%d"),
+            end_dt.strftime("%Y-%m-%d"),
+        ],
+    }
+
+
+def get_period_text(mode: str) -> dict:
+    if mode == "week":
+        return {
+            "report_title": "周度报告",
+            "supplement_title": "本周补充报告",
+            "current_desc": "本周截至当前时间",
+            "partial_desc": "本周部分数据",
+            "full_desc": "周末完整数据",
+            "steady_text": "连续两周",
+            "comparison_desc": "上上周",
+            "period_compare_label": "周度环比",
+        }
+    return {
+        "report_title": "月度报告",
+        "supplement_title": "月度补充报告",
+        "current_desc": "当月截至今日",
+        "partial_desc": "当月部分数据",
+        "full_desc": "月末完整数据",
+        "steady_text": "连续两月",
+        "comparison_desc": "上上自然月",
+        "period_compare_label": "月度环比",
+    }
+
+
+def get_periods(mode: str = "month"):
+    """根据周期模式自动推算 prev / last / curr 三个统计窗口。"""
     today = datetime.now(timezone.utc)
+    texts = get_period_text(mode)
+
+    if mode == "week":
+        current_iso = today.isocalendar()
+        current_week_start = datetime.fromisocalendar(current_iso.year, current_iso.week, 1).replace(tzinfo=timezone.utc)
+
+        last_anchor = current_week_start - timedelta(days=1)
+        prev_anchor = current_week_start - timedelta(days=8)
+
+        last_iso = last_anchor.isocalendar()
+        prev_iso = prev_anchor.isocalendar()
+
+        prev_start, prev_end = week_range_ms(prev_iso.year, prev_iso.week)
+        last_start, last_end = week_range_ms(last_iso.year, last_iso.week)
+
+        curr_start = int(current_week_start.timestamp() * 1000)
+        curr_end = int(today.timestamp() * 1000)
+        curr_period = {
+            "mode": "week",
+            "year": current_iso.year,
+            "week": current_iso.week,
+            "start": curr_start,
+            "end": curr_end,
+            "label": f"{current_iso.year}年W{current_iso.week:02d}周",
+            "range_label": f"{fmt_date(current_week_start)} ～ {fmt_date(today)}",
+            "match_tokens": [
+                f"{current_iso.year}-W{current_iso.week:02d}",
+                f"{current_iso.year}W{current_iso.week:02d}",
+                current_week_start.strftime("%Y-%m-%d"),
+                today.strftime("%Y-%m-%d"),
+            ],
+            "cutoff_label": fmt_date(today),
+        }
+
+        return {
+            "mode": mode,
+            "texts": texts,
+            "prev": build_week_period(prev_iso.year, prev_iso.week, prev_start, prev_end),
+            "last": build_week_period(last_iso.year, last_iso.week, last_start, last_end),
+            "curr": curr_period,
+            "report_id": f"{last_iso.year}W{last_iso.week:02d}",
+            "report_label": f"{last_iso.year}年W{last_iso.week:02d}周",
+            "gen_date": today.strftime("%Y-%m-%d"),
+        }
 
     def prev_month(y, m):
         return (y, m - 1) if m > 1 else (y - 1, 12)
@@ -54,29 +180,22 @@ def get_periods():
     curr_end = int(today.timestamp() * 1000)
 
     return {
-        "prev": {
-            "year": prev_y, "month": prev_m,
-            "start": prev_start, "end": prev_end,
-            "last_day_ms": month_last_day_ms(prev_y, prev_m),
-            "label": f"{prev_m}月",
-            "range_label": f"{prev_y}年{prev_m}月1日 ～ {prev_y}年{prev_m}月{monthrange(prev_y, prev_m)[1]}日",
-        },
-        "last": {
-            "year": last_y, "month": last_m,
-            "start": last_start, "end": last_end,
-            "last_day_ms": month_last_day_ms(last_y, last_m),
-            "label": f"{last_m}月",
-            "range_label": f"{last_y}年{last_m}月1日 ～ {last_y}年{last_m}月{monthrange(last_y, last_m)[1]}日",
-        },
+        "mode": mode,
+        "texts": texts,
+        "prev": build_month_period(prev_y, prev_m, prev_start, prev_end),
+        "last": build_month_period(last_y, last_m, last_start, last_end),
         "curr": {
+            "mode": "month",
             "year": today.year, "month": today.month, "day": today.day,
             "start": curr_start, "end": curr_end,
             "label": f"{today.month}月",
             "range_label": f"{today.year}年{today.month}月1日 ～ {today.year}年{today.month}月{today.day}日",
+            "match_prefix": f"{today.year}-{today.month:02d}",
+            "cutoff_label": fmt_date(today),
         },
-        "report_yyyymm": f"{today.year}{today.month:02d}",
+        "report_id": f"{today.year}{today.month:02d}",
         "gen_date": today.strftime("%Y-%m-%d"),
-        "report_month_label": f"{today.year}年{today.month}月",
+        "report_label": f"{today.year}年{today.month}月",
     }
 
 
@@ -90,15 +209,48 @@ async def api_get(client: httpx.AsyncClient, path: str, params: dict) -> dict:
         return {"code": -1, "error": str(e), "data": None}
 
 
-def extract_first(resp: dict, month_date_prefix: str = None):
+def matches_period(item: dict, period: dict) -> bool:
+    if not isinstance(item, dict) or not period:
+        return False
+
+    if period.get("mode") == "month":
+        prefix = period.get("match_prefix")
+        if not prefix:
+            return False
+        for key in ("month_date", "date", "period", "stat_date", "start_date"):
+            if str(item.get(key, "")).startswith(prefix):
+                return True
+        return False
+
+    if period.get("mode") == "week":
+        item_year = item.get("year")
+        item_week = item.get("week")
+        if item_year is not None and item_week is not None:
+            try:
+                if int(item_year) == int(period["year"]) and int(item_week) == int(period["week"]):
+                    return True
+            except (TypeError, ValueError):
+                pass
+
+        tokens = period.get("match_tokens", [])
+        for key in ("week_date", "date", "period", "stat_date", "start_date", "range"):
+            value = str(item.get(key, ""))
+            if any(token in value for token in tokens):
+                return True
+        return False
+
+    return False
+
+
+def extract_first(resp: dict, period: dict = None):
     """从 API 响应中提取 data 列表的第一个匹配条目。"""
     data = resp.get("data") if isinstance(resp, dict) else None
     if not data:
         return None
     if isinstance(data, list):
-        if month_date_prefix:
+        if period:
             for item in data:
-                if str(item.get("month_date", "")).startswith(month_date_prefix):
+                if matches_period(item, period):
                     return item
         return data[0] if data else None
     return data
@@ -109,6 +261,7 @@ async def fetch_all_metrics(community: str, periods: dict) -> dict:
     prev = periods["prev"]
     last = periods["last"]
     curr = periods["curr"]
+    interval = periods["mode"]
 
     async with httpx.AsyncClient(timeout=30) as client:
         async def G(path, params):
@@ -117,13 +270,13 @@ async def fetch_all_metrics(community: str, periods: dict) -> dict:
         # 并发请求所有 API
         tasks = {
             # 贡献活跃度
-            "contribute_prev": G("/stats/contribute", {"community": community, "interval": "month", "start": prev["start"], "end": prev["end"]}),
-            "contribute_last": G("/stats/contribute", {"community": community, "interval": "month", "start": last["start"], "end": last["end"]}),
-            "contribute_curr": G("/stats/contribute", {"community": community, "interval": "month", "start": curr["start"], "end": curr["end"]}),
+            "contribute_prev": G("/stats/contribute", {"community": community, "interval": interval, "start": prev["start"], "end": prev["end"]}),
+            "contribute_last": G("/stats/contribute", {"community": community, "interval": interval, "start": last["start"], "end": last["end"]}),
+            "contribute_curr": G("/stats/contribute", {"community": community, "interval": interval, "start": curr["start"], "end": curr["end"]}),
             # 有效 Review
-            "comment_prev": G("/stats/valid/comment", {"community": community, "interval": "month", "start": prev["start"], "end": prev["end"]}),
-            "comment_last": G("/stats/valid/comment", {"community": community, "interval": "month", "start": last["start"], "end": last["end"]}),
-            "comment_curr": G("/stats/valid/comment", {"community": community, "interval": "month", "start": curr["start"], "end": curr["end"]}),
+            "comment_prev": G("/stats/valid/comment", {"community": community, "interval": interval, "start": prev["start"], "end": prev["end"]}),
+            "comment_last": G("/stats/valid/comment", {"community": community, "interval": interval, "start": last["start"], "end": last["end"]}),
+            "comment_curr": G("/stats/valid/comment", {"community": community, "interval": interval, "start": curr["start"], "end": curr["end"]}),
             # 领域适配引用度
             "integration": G("/stats/itegration", {"community": community}),
             # TOP 开发者留存率
@@ -135,36 +288,32 @@ async def fetch_all_metrics(community: str, periods: dict) -> dict:
             "download_last": G("/stats/year/download", {"community": community, "date": last["last_day_ms"]}),
             "download_curr": G("/stats/year/download", {"community": community, "date": curr["end"]}),
             # Issue 响应效率
-            "issue_prev": G("/stats/issue", {"community": community, "interval": "month", "start": prev["start"], "end": prev["end"]}),
-            "issue_last": G("/stats/issue", {"community": community, "interval": "month", "start": last["start"], "end": last["end"]}),
-            "issue_curr": G("/stats/issue", {"community": community, "interval": "month", "start": curr["start"], "end": curr["end"]}),
+            "issue_prev": G("/stats/issue", {"community": community, "interval": interval, "start": prev["start"], "end": prev["end"]}),
+            "issue_last": G("/stats/issue", {"community": community, "interval": interval, "start": last["start"], "end": last["end"]}),
+            "issue_curr": G("/stats/issue", {"community": community, "interval": interval, "start": curr["start"], "end": curr["end"]}),
             # 论坛响应效率
-            "forum_prev": G("/stats/forum", {"community": community, "interval": "month", "start": prev["start"], "end": prev["end"]}),
-            "forum_last": G("/stats/forum", {"community": community, "interval": "month", "start": last["start"], "end": last["end"]}),
-            "forum_curr": G("/stats/forum", {"community": community, "interval": "month", "start": curr["start"], "end": curr["end"]}),
+            "forum_prev": G("/stats/forum", {"community": community, "interval": interval, "start": prev["start"], "end": prev["end"]}),
+            "forum_last": G("/stats/forum", {"community": community, "interval": interval, "start": last["start"], "end": last["end"]}),
+            "forum_curr": G("/stats/forum", {"community": community, "interval": interval, "start": curr["start"], "end": curr["end"]}),
             # 版本发布偏差
             "version_prev": G("/stats/health/metric", {"community": community, "metric": "version_release", "date": prev["last_day_ms"]}),
             "version_last": G("/stats/health/metric", {"community": community, "metric": "version_release", "date": last["last_day_ms"]}),
             # 组织多样性
-            "company_prev": G("/stats/company", {"community": community, "interval": "month", "start": prev["start"], "end": prev["end"]}),
-            "company_last": G("/stats/company", {"community": community, "interval": "month", "start": last["start"], "end": last["end"]}),
-            "company_curr": G("/stats/company", {"community": community, "interval": "month", "start": curr["start"], "end": curr["end"]}),
+            "company_prev": G("/stats/company", {"community": community, "interval": interval, "start": prev["start"], "end": prev["end"]}),
+            "company_last": G("/stats/company", {"community": community, "interval": interval, "start": last["start"], "end": last["end"]}),
+            "company_curr": G("/stats/company", {"community": community, "interval": interval, "start": curr["start"], "end": curr["end"]}),
             # 搜索指数
-            "influence_prev": G("/stats/influence", {"community": community, "interval": "month", "start": prev["start"], "end": prev["end"]}),
-            "influence_last": G("/stats/influence", {"community": community, "interval": "month", "start": last["start"], "end": last["end"]}),
-            "influence_curr": G("/stats/influence", {"community": community, "interval": "month", "start": curr["start"], "end": curr["end"]}),
+            "influence_prev": G("/stats/influence", {"community": community, "interval": interval, "start": prev["start"], "end": prev["end"]}),
+            "influence_last": G("/stats/influence", {"community": community, "interval": interval, "start": last["start"], "end": last["end"]}),
+            "influence_curr": G("/stats/influence", {"community": community, "interval": interval, "start": curr["start"], "end": curr["end"]}),
         }
         results = {}
         for key, coro in tasks.items():
             results[key] = await coro
 
     # ── 提取关键字段 ──────────────────────────────────────────────
-    prev_ym = f"{prev['year']}-{prev['month']:02d}"
-    last_ym = f"{last['year']}-{last['month']:02d}"
-    curr_ym = f"{curr['year']}-{curr['month']:02d}"
-
-    def get_contribute(resp, ym):
-        item = extract_first(resp, ym)
+    def get_contribute(resp, period):
+        item = extract_first(resp, period)
         if not item:
             return None
         return {
@@ -173,10 +322,10 @@ async def fetch_all_metrics(community: str, periods: dict) -> dict:
             "issues": item.get("issues"),
         }
 
-    def get_comment(resp, ym):
+    def get_comment(resp, period):
         if not resp or resp.get("code") != 1:
             return None
-        item = extract_first(resp, ym)
+        item = extract_first(resp, period)
         if not item:
             return None
         return {
@@ -218,19 +367,19 @@ async def fetch_all_metrics(community: str, periods: dict) -> dict:
             "median_closed": item.get("median_closed_time"),
         }
 
-    def get_company(resp, ym):
+    def get_company(resp, period):
         if not resp or resp.get("code") != 1:
             return None
-        item = extract_first(resp, ym)
+        item = extract_first(resp, period)
         return item.get("count") if item else None
 
-    def get_influence(resp, ym):
+    def get_influence(resp, period):
         if not resp or resp.get("code") != 1:
             return None
         data = resp.get("data")
         if not data or not isinstance(data, list):
             return None
-        item = extract_first(resp, ym)
+        item = extract_first(resp, period)
         return item.get("avg_index") if item else None
 
     def get_download(resp):
@@ -274,36 +423,36 @@ async def fetch_all_metrics(community: str, periods: dict) -> dict:
     return {
         "community": community,
         "prev": {
-            "contribute": get_contribute(results["contribute_prev"], prev_ym),
-            "comment": get_comment(results["comment_prev"], prev_ym),
+            "contribute": get_contribute(results["contribute_prev"], prev),
+            "comment": get_comment(results["comment_prev"], prev),
             "retention": get_retention(results["retention_prev"]),
             "download": get_download(results["download_prev"]),
             "issue": get_issue(results["issue_prev"]),
             "forum": get_forum(results["forum_prev"]),
             "version": get_version(results["version_prev"]),
-            "companies": get_company(results["company_prev"], prev_ym),
-            "influence": get_influence(results["influence_prev"], prev_ym),
+            "companies": get_company(results["company_prev"], prev),
+            "influence": get_influence(results["influence_prev"], prev),
         },
         "last": {
-            "contribute": get_contribute(results["contribute_last"], last_ym),
-            "comment": get_comment(results["comment_last"], last_ym),
+            "contribute": get_contribute(results["contribute_last"], last),
+            "comment": get_comment(results["comment_last"], last),
             "retention": get_retention(results["retention_last"]),
             "download": get_download(results["download_last"]),
             "issue": get_issue(results["issue_last"]),
             "forum": get_forum(results["forum_last"]),
             "version": get_version(results["version_last"]),
-            "companies": get_company(results["company_last"], last_ym),
-            "influence": get_influence(results["influence_last"], last_ym),
+            "companies": get_company(results["company_last"], last),
+            "influence": get_influence(results["influence_last"], last),
         },
         "curr": {
-            "contribute": get_contribute(results["contribute_curr"], curr_ym),
-            "comment": get_comment(results["comment_curr"], curr_ym),
+            "contribute": get_contribute(results["contribute_curr"], curr),
+            "comment": get_comment(results["comment_curr"], curr),
             "retention": get_retention(results["retention_curr"]),
             "download": get_download(results["download_curr"]),
             "issue": get_issue(results["issue_curr"]),
             "forum": get_forum(results["forum_curr"]),
-            "companies": get_company(results["company_curr"], curr_ym),
-            "influence": get_influence(results["influence_curr"], curr_ym),
+            "companies": get_company(results["company_curr"], curr),
+            "influence": get_influence(results["influence_curr"], curr),
         },
         "integration": get_integration(results["integration"]),
     }
@@ -330,7 +479,7 @@ def pct_improve(new, old) -> str:
     if abs(change) < 0.05:
         return "— 持平"
     if new < old:
-        return f"▲ 改善 {change:.1f}%"
+        return f"▲ 改善 {abs(change):.1f}%"
     return f"▼ 延长 +{abs(change):.1f}%"
 
 
@@ -404,8 +553,8 @@ def gen_section_comment(d_last, d_prev, last_lbl, prev_lbl) -> list:
 
 def gen_section_integration(integration) -> list:
     if integration is not None:
-        val_row = f"| 适配 / 集成 / 引用项目总数 | **{integration} 个** | 汇总值，无月度拆分 |"
-        note = f"> 领域主流项目适配集成引用度达 {integration} 个，汇总值无月度拆分。"
+        val_row = f"| 适配 / 集成 / 引用项目总数 | **{integration} 个** | 汇总值，无按周期拆分 |"
+        note = f"> 领域主流项目适配集成引用度达 {integration} 个，汇总值无按周期拆分。"
     else:
         val_row = "| 适配 / 集成 / 引用项目总数 | **—** | 暂无数据 |"
         note = "> 暂无项目集成引用度数据，建议建立相关数据采集机制。"
@@ -439,7 +588,7 @@ def gen_section_retention(d_last, d_prev, last_lbl, prev_lbl) -> list:
     ] + rows + ["", note, ""]
 
 
-def gen_section_download(d_last, d_prev, d_curr, last_lbl, prev_lbl, curr_lbl, curr_day) -> list:
+def gen_section_download(period_mode, d_last, d_prev, d_curr, last_lbl, prev_lbl, curr_lbl, cutoff_label) -> list:
     dl_last = d_last.get("download")
     dl_prev = d_prev.get("download")
     dl_curr = d_curr.get("download")
@@ -449,21 +598,26 @@ def gen_section_download(d_last, d_prev, d_curr, last_lbl, prev_lbl, curr_lbl, c
         w_prev = download_wan(dl_prev)
         w_curr = download_wan(dl_curr) if dl_curr is not None else None
 
-        last_month_dl = round(w_last - w_prev, 4) if w_prev is not None else None
-        prev_month_dl = w_prev  # prev YTD is the year start to prev month end
+        last_period_dl = round(w_last - w_prev, 4) if w_last is not None and w_prev is not None else None
 
-        # For monthly download we need the previous period's YTD too
-        # Actually the download API returns YTD (year-to-date cumulative)
-        # last_month_download = last_YTD - prev_YTD
-        rows = [
-            f"| {last_lbl}当月下载量 | **{fmt(last_month_dl, ' 万次') if last_month_dl else '—'}** | {last_lbl}YTD − {prev_lbl}YTD |",
-            f"| {prev_lbl}当月下载量 | {fmt(w_prev, ' 万次') if w_prev else '—'} | 年初首月或上月下载 |",
-            f"| 月度环比 | {pct(last_month_dl, w_prev) if last_month_dl and w_prev else 'N/A'} | {last_lbl}当月 vs {prev_lbl}当月 |",
-            f"| 年初累计（{last_lbl} YTD）| **{fmt(w_last, ' 万次') if w_last else '—'}** | 2026-01-01 ～ {last_lbl}末 |",
-            f"| {prev_lbl} YTD（上月累计）| {fmt(w_prev, ' 万次') if w_prev else '—'} | 2026-01-01 ～ {prev_lbl}末 |",
-            f"| YTD 累计环比 | {pct(w_last, w_prev)} | {last_lbl}YTD vs {prev_lbl}YTD |",
-        ]
-        note = f"> {last_lbl}当月下载量 = {w_last} - {w_prev} = {last_month_dl}（万次）。"
+        if period_mode == "week":
+            rows = [
+                f"| {last_lbl}增量下载量 | **{fmt(last_period_dl, ' 万次') if last_period_dl is not None else '—'}** | {last_lbl}YTD − {prev_lbl}YTD |",
+                f"| {last_lbl}末 YTD | **{fmt(w_last, ' 万次') if w_last is not None else '—'}** | 年初累计至 {last_lbl} 周末 |",
+                f"| {prev_lbl}末 YTD | {fmt(w_prev, ' 万次') if w_prev is not None else '—'} | 上一对比周期累计 |",
+                f"| YTD 累计环比 | {pct(w_last, w_prev)} | {last_lbl}YTD vs {prev_lbl}YTD |",
+            ]
+            note = f"> {last_lbl}增量下载量 = {w_last} - {w_prev} = {last_period_dl}（万次）。"
+        else:
+            rows = [
+                f"| {last_lbl}当月下载量 | **{fmt(last_period_dl, ' 万次') if last_period_dl is not None else '—'}** | {last_lbl}YTD − {prev_lbl}YTD |",
+                f"| {prev_lbl}末 YTD | {fmt(w_prev, ' 万次') if w_prev is not None else '—'} | 截至 {prev_lbl} 末累计 |",
+                f"| 月度环比 | {pct(last_period_dl, w_prev) if last_period_dl is not None and w_prev is not None else 'N/A'} | {last_lbl}当月 vs {prev_lbl}末累计基线 |",
+                f"| 年初累计（{last_lbl} YTD）| **{fmt(w_last, ' 万次') if w_last is not None else '—'}** | 年初至 {last_lbl} 末累计 |",
+                f"| {prev_lbl} YTD（上期累计）| {fmt(w_prev, ' 万次') if w_prev is not None else '—'} | 参考对比 |",
+                f"| YTD 累计环比 | {pct(w_last, w_prev)} | {last_lbl}YTD vs {prev_lbl}YTD |",
+            ]
+            note = f"> {last_lbl}当月下载量 = {w_last} - {w_prev} = {last_period_dl}（万次）。"
     else:
         rows = ["| 年初至今下载量 | **—** | 暂无数据 |"]
         note = "> 暂无社区下载量数据，建议完善下载量统计机制。"
@@ -565,16 +719,16 @@ def gen_section_version(d_last, d_prev, last_lbl, prev_lbl) -> list:
     ]
 
 
-def gen_section_company(d_last, d_prev, last_lbl, prev_lbl) -> list:
+def gen_section_company(period_mode, d_last, d_prev, last_lbl, prev_lbl, steady_text) -> list:
     c_l = d_last.get("companies")
     c_p = d_prev.get("companies")
 
     if c_l is not None:
         row = f"| 贡献组织数 | **{c_l} 个** | {fmt(c_p, ' 个')} | {pct(c_l, c_p)} |"
         if c_l == c_p:
-            note = f"> 贡献组织数连续两月稳定在 {c_l} 个，春节期间参与组织未减少，组织稳定性较好。"
+            note = f"> 贡献组织数{steady_text}稳定在 {c_l} 个，参与组织数量保持稳定。"
         elif c_l < c_p:
-            note = f"> 贡献组织数从 {c_p} 个降至 {c_l} 个（{pct(c_l, c_p)}），春节假期期间部分组织贡献活跃度有所下降。"
+            note = f"> 贡献组织数从 {c_p} 个降至 {c_l} 个（{pct(c_l, c_p)}），需关注外部组织参与活跃度变化。"
         else:
             note = f"> 贡献组织数从 {c_p} 个增至 {c_l} 个（{pct(c_l, c_p)}），组织多样性持续提升。"
         if c_l <= 3:
@@ -610,7 +764,7 @@ def gen_section_influence(d_last, d_prev, last_lbl, prev_lbl) -> list:
     ]
 
 
-def gen_summary(community, d_last, d_prev, last_lbl, prev_lbl) -> list:
+def gen_summary(period_mode, community, d_last, d_prev, last_lbl, prev_lbl) -> list:
     """生成综合分析章节。"""
     c_last = d_last.get("contribute") or {}
     c_prev = d_prev.get("contribute") or {}
@@ -639,7 +793,7 @@ def gen_summary(community, d_last, d_prev, last_lbl, prev_lbl) -> list:
     pr_p = c_prev.get("merged_prs")
     if act_l is not None and act_p is not None and act_l < act_p:
         v = abs((act_l - act_p) / act_p * 100)
-        concerns.append(f"- **贡献活跃度回落**：活跃开发者减少 {v:.1f}%（{act_p}→{act_l}），需关注 {last_lbl} 后节后恢复情况。")
+        concerns.append(f"- **贡献活跃度回落**：活跃开发者减少 {v:.1f}%（{act_p}→{act_l}），需关注后续恢复情况。")
 
     # Retention
     ret_l = d_last.get("retention")
@@ -680,7 +834,7 @@ def gen_summary(community, d_last, d_prev, last_lbl, prev_lbl) -> list:
 
 
 def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
-    """生成单个社区的完整 Markdown 报告（主报告 + 3月环比补充）。"""
+    """生成单个社区的完整 Markdown 报告（主报告 + 补充报告）。"""
     d_last = metrics["last"]
     d_prev = metrics["prev"]
     d_curr = metrics["curr"]
@@ -689,12 +843,14 @@ def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
     last = periods["last"]
     prev = periods["prev"]
     curr = periods["curr"]
+    texts = periods["texts"]
+    period_mode = periods["mode"]
 
     last_lbl = last["label"]
     prev_lbl = prev["label"]
     curr_lbl = curr["label"]
-    curr_day = curr["day"]
-    report_month_lbl = periods["report_month_label"]
+    cutoff_label = curr["cutoff_label"]
+    report_label = periods["report_label"]
     gen_date = periods["gen_date"]
 
     lines = []
@@ -706,7 +862,7 @@ def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
 
     # ── 主报告标题 ──
     lines += [
-        f"# {community_name} 社区运营质量月度报告 — {report_month_lbl}",
+        f"# {community_name} 社区运营质量{texts['report_title']} — {report_label}",
         "",
         f"> 统计周期：{last['range_label']}",
         f"> 环比对象：{prev['range_label']}",
@@ -722,21 +878,21 @@ def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
         gen_section_comment(d_last, d_prev, last_lbl, prev_lbl),
         gen_section_integration(integration),
         gen_section_retention(d_last, d_prev, last_lbl, prev_lbl),
-        gen_section_download(d_last, d_prev, d_curr, last_lbl, prev_lbl, curr_lbl, curr_day),
+        gen_section_download(period_mode, d_last, d_prev, d_curr, last_lbl, prev_lbl, curr_lbl, cutoff_label),
         gen_section_issue(d_last, d_prev, last_lbl, prev_lbl),
         gen_section_forum(d_last, d_prev, last_lbl, prev_lbl),
         gen_section_version(d_last, d_prev, last_lbl, prev_lbl),
-        gen_section_company(d_last, d_prev, last_lbl, prev_lbl),
+        gen_section_company(period_mode, d_last, d_prev, last_lbl, prev_lbl, texts["steady_text"]),
         gen_section_influence(d_last, d_prev, last_lbl, prev_lbl),
-        gen_summary(community_name, d_last, d_prev, last_lbl, prev_lbl),
+        gen_summary(period_mode, community_name, d_last, d_prev, last_lbl, prev_lbl),
     )
 
     # ── 补充报告：当月环比 ──
     lines += [
         "",
-        f"# {community_name} 社区运营质量补充报告 — {curr_lbl}数据环比",
+        f"# {community_name} 社区运营质量{texts['supplement_title']} — {curr_lbl}数据环比",
         "",
-        f"> 统计周期：{curr['range_label']}（当月部分数据）",
+        f"> 统计周期：{curr['range_label']}（{texts['partial_desc']}）",
         f"> 环比对象：{last['range_label']}",
         f"> 生成日期：{gen_date}",
         "",
@@ -784,11 +940,11 @@ def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
             "| 指标 | 数值 | 说明 |",
             "|------|:----:|------|",
         ] + (
-            [f"| 年初累计（{curr_lbl} YTD，截至{curr_day}日）| **{fmt(download_wan(d_curr.get('download')), ' 万次') if d_curr.get('download') else '—'}** | 2026-01-01 ～ {curr_lbl}{curr_day}日 |",
-             f"| {last_lbl} YTD（上月末累计）| {fmt(download_wan(d_last.get('download')), ' 万次') if d_last.get('download') else '—'} | 参考对比 |",
+            [f"| 年初累计（{curr_lbl} YTD，截至 {cutoff_label}）| **{fmt(download_wan(d_curr.get('download')), ' 万次') if d_curr.get('download') is not None else '—'}** | 年初至当前统计截止时点累计 |",
+             f"| {last_lbl} YTD（上期累计）| {fmt(download_wan(d_last.get('download')), ' 万次') if d_last.get('download') is not None else '—'} | 参考对比 |",
              f"| YTD 累计环比 | {pct(d_curr.get('download'), d_last.get('download'))} | {curr_lbl}YTD vs {last_lbl}YTD |"]
-            if d_curr.get("download") else
-            ["| 年初至今下载量（截至{curr_day}日）| **—** | 暂无数据 |"]
+            if d_curr.get("download") is not None else
+            [f"| 年初至今下载量（截至 {cutoff_label}）| **—** | 暂无数据 |"]
         ) + [""], None),
         (curr_section_issue, None),
         (lambda: gen_section_forum(d_curr, d_last, curr_lbl, last_lbl), None),
@@ -799,7 +955,7 @@ def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
             "| 版本发布偏差 | **—** | — | 当月数据待统计 |",
             "",
         ], None),
-        (lambda: gen_section_company(d_curr, d_last, curr_lbl, last_lbl), None),
+        (lambda: gen_section_company(period_mode, d_curr, d_last, curr_lbl, last_lbl, texts["steady_text"]), None),
         (lambda: gen_section_influence(d_curr, d_last, curr_lbl, last_lbl), None),
     ]:
         lines.extend(section_fn())
@@ -828,7 +984,7 @@ def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
         m_pos.append(f"- **Issue 平均关闭时长** 改善 -{v:.1f}%（{is_last_i['avg_closed']:.2f}→{is_curr['avg_closed']:.2f} 天），处理效率显著提升。")
 
     if not m_pos:
-        m_pos = ["- 当前截至{curr_day}日数据需进一步观察月末完整数据。".format(curr_day=curr_day)]
+        m_pos = [f"- 当前截至 {cutoff_label} 的数据仍需结合后续完整周期数据继续观察。"]
     lines.extend(m_pos)
 
     lines += ["", "### 需要关注"]
@@ -842,13 +998,13 @@ def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
         m_neg.append(f"- **Issue 平均响应时长** 延长 +{v:.1f}%（{is_last_i['avg_first_reply']:.2f}→{is_curr['avg_first_reply']:.2f} 天），需关注 Issue 积压情况。")
 
     if not m_neg:
-        m_neg = [f"- 当前截至{curr_day}日数据整体表现平稳，月末完整数据将更准确反映趋势。"]
+        m_neg = [f"- 当前截至 {cutoff_label} 的数据整体表现平稳，后续完整周期数据将更准确反映趋势。"]
     lines.extend(m_neg)
 
     lines += [
         "",
-        f"> **注**：{curr_lbl}数据统计周期为 {curr['range_label']}，为当月部分数据，",
-        "> 月末完整数据将在下期报告中体现，环比结论仅供参考。",
+        f"> **注**：{curr_lbl}数据统计周期为 {curr['range_label']}，为{texts['partial_desc']}，",
+        f"> {texts['full_desc']}将在下期报告中体现，环比结论仅供参考。",
         "",
         "---",
         "",
@@ -861,15 +1017,14 @@ def gen_report(community_name: str, metrics: dict, periods: dict) -> str:
 # ─── 主程序 ────────────────────────────────────────────────────────────────────
 
 async def main():
-    args = sys.argv[1:]
-    if not args:
-        print("用法: python3 gen_report.py community1 community2 ...", file=sys.stderr)
-        print("示例: python3 gen_report.py pta vllm triton tilelang", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="生成社区运营质量周报或月报")
+    parser.add_argument("--period", choices=["month", "week"], default="month", help="统计周期，默认 month")
+    parser.add_argument("communities", nargs="+", help="社区名称，支持空格或逗号分隔")
+    parsed = parser.parse_args()
 
     # 解析社区名列表（支持逗号分隔或空格分隔）
     communities = []
-    for arg in args:
+    for arg in parsed.communities:
         for c in arg.replace(",", " ").split():
             c = c.strip().lower()
             if c:
@@ -879,12 +1034,13 @@ async def main():
         print("错误：未提供有效的社区名称", file=sys.stderr)
         sys.exit(1)
 
-    periods = get_periods()
-    yyyymm = periods["report_yyyymm"]
+    periods = get_periods(parsed.period)
+    report_id = periods["report_id"]
 
+    print(f"统计模式：{parsed.period}", file=sys.stderr)
     print(f"报告周期：{periods['last']['range_label']}", file=sys.stderr)
     print(f"对比周期：{periods['prev']['range_label']}", file=sys.stderr)
-    print(f"当月截至：{periods['curr']['range_label']}", file=sys.stderr)
+    print(f"补充周期：{periods['curr']['range_label']}", file=sys.stderr)
     print(f"处理社区：{', '.join(communities)}", file=sys.stderr)
     print("", file=sys.stderr)
 
@@ -915,7 +1071,10 @@ async def main():
             content = gen_report(display_name, metrics, periods)
 
             # 保存文件
-            filename = f"{community}_community_quality_monthly_{yyyymm}.md"
+            if parsed.period == "week":
+                filename = f"{community}_community_quality_weekly_{report_id}.md"
+            else:
+                filename = f"{community}_community_quality_monthly_{report_id}.md"
             filepath = os.path.join(REPORTS_DIR, filename)
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -932,6 +1091,7 @@ async def main():
 
     # 向 stdout 输出结果摘要（供 Claude 读取）
     result = {
+        "period": parsed.period,
         "generated": generated,
         "failed": [{"community": c, "error": e} for c, e in failed],
         "periods": {

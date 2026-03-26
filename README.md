@@ -20,7 +20,7 @@
 - [核心功能](#-核心功能)
 - [快速开始](#-快速开始)
 - [使用方式](#-使用方式)
-- [月度报告生成（Skill）](#-月度报告生成skill)
+- [周报/月报生成（Skill）](#-周报月报生成skill)
 - [Excel 对比表生成（Skill）](#-excel-对比表生成skill)
 
 **🛠️ 我是开发者**
@@ -194,23 +194,34 @@ MindSpore 和 openGauss 的 Issue 关闭率对比
 
 ---
 
-## 📋 月度报告生成（Skill）
+## 📋 周报/月报生成（Skill）
 
-项目内置了 `/gen-quality-report` Skill，可在 Claude Code 中一键生成开源社区运营质量月度报告。
+项目内置了 `/gen-quality-report` Skill，可在 Claude Code 中一键生成开源社区运营质量周报或月报。
 
 ### 使用方式
 
 在 Claude Code（项目目录下）输入斜杠命令：
 
 ```
-/gen-quality-report <社区1> [社区2] [社区3] ...
+/gen-quality-report [--period month|week] <社区1> [社区2] [社区3] ...
 ```
+
+说明：
+- `--period month`：按月级统计生成月报
+- `--period week`：按周级统计生成周报
+- 省略 `--period` 时默认按 `month` 处理
 
 **示例：**
 
 ```
-# 生成单个社区报告
+# 生成单个社区月报
 /gen-quality-report vllm
+
+# 显式生成多个社区月报
+/gen-quality-report --period month pta vllm triton tilelang
+
+# 生成单个社区周报
+/gen-quality-report --period week vllm
 
 # 同时生成多个社区报告
 /gen-quality-report pta vllm triton tilelang
@@ -229,7 +240,7 @@ MindSpore 和 openGauss 的 Issue 关闭率对比
 | 代码审查质量 | 有效 Review 总数、每 PR 平均 Review 数 |
 | 领域适配引用度 | 适配/集成/引用项目总数 |
 | TOP 开发者留存 | TOP 开发者留存率 |
-| 社区下载量（YTD） | 当月下载量、年累计下载量及月度/YTD 环比 |
+| 社区下载量（YTD） | 周报显示周增量下载量与 YTD 环比，月报显示当月下载量与 YTD 环比 |
 | Issue 响应效率 | 平均/中位首次响应时长、平均/中位关闭时长 |
 | 论坛响应效率 | 平均/中位首次响应时长、平均/中位关闭时长 |
 | 版本发布偏差 | 版本发布计划偏差天数 |
@@ -237,10 +248,14 @@ MindSpore 和 openGauss 的 Issue 关闭率对比
 | 主流平台搜索指数 | 平均搜索指数 |
 
 每次执行会生成两部分：
-- **主报告**：上一自然月数据，与上上月对比环比
-- **补充报告**：当月截至今日数据，与上月对比环比
+- **月报主报告**：上一自然月数据，与上上自然月对比环比
+- **月报补充报告**：当月截至今日数据，与上月对比环比
+- **周报主报告**：上一完整周数据，与上上周对比环比
+- **周报补充报告**：本周截至当前时间数据，与上一完整周对比环比
 
-**输出文件命名**：`reports/{community}_community_quality_monthly_{YYYYMM}.md`
+**输出文件命名**：
+- 月报：`reports/{community}_community_quality_monthly_{YYYYMM}.md`
+- 周报：`reports/{community}_community_quality_weekly_{YYYY}W{WW}.md`
 
 ### 前置要求
 
