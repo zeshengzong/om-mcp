@@ -20,6 +20,8 @@
 - [核心功能](#-核心功能)
 - [快速开始](#-快速开始)
 - [使用方式](#-使用方式)
+- [月度报告生成（Skill）](#-月度报告生成skill)
+- [Excel 对比表生成（Skill）](#-excel-对比表生成skill)
 
 **🛠️ 我是开发者**
 - [开发指南](#️-开发指南)
@@ -189,6 +191,101 @@ MindSpore 和 openGauss 的 Issue 关闭率对比
 ```
 
 更多使用示例请参考 [FEATURES.md](FEATURES.md)。
+
+---
+
+## 📋 月度报告生成（Skill）
+
+项目内置了 `/gen-quality-report` Skill，可在 Claude Code 中一键生成开源社区运营质量月度报告。
+
+### 使用方式
+
+在 Claude Code（项目目录下）输入斜杠命令：
+
+```
+/gen-quality-report <社区1> [社区2] [社区3] ...
+```
+
+**示例：**
+
+```
+# 生成单个社区报告
+/gen-quality-report vllm
+
+# 同时生成多个社区报告
+/gen-quality-report pta vllm triton tilelang
+
+# 逗号分隔也支持
+/gen-quality-report mindie, mindspeed, mindcluster
+```
+
+### 报告内容
+
+每份报告包含以下内容，并自动写入 `reports/` 目录：
+
+| 章节 | 指标 |
+|------|------|
+| 贡献活跃度 | 活跃开发者数、合入 PR 数、提交 Issue 数 |
+| 代码审查质量 | 有效 Review 总数、每 PR 平均 Review 数 |
+| 领域适配引用度 | 适配/集成/引用项目总数 |
+| TOP 开发者留存 | TOP 开发者留存率 |
+| 社区下载量（YTD） | 当月下载量、年累计下载量及月度/YTD 环比 |
+| Issue 响应效率 | 平均/中位首次响应时长、平均/中位关闭时长 |
+| 论坛响应效率 | 平均/中位首次响应时长、平均/中位关闭时长 |
+| 版本发布偏差 | 版本发布计划偏差天数 |
+| 社区组织多样性 | 贡献组织数 |
+| 主流平台搜索指数 | 平均搜索指数 |
+
+每次执行会生成两部分：
+- **主报告**：上一自然月数据，与上上月对比环比
+- **补充报告**：当月截至今日数据，与上月对比环比
+
+**输出文件命名**：`reports/{community}_community_quality_monthly_{YYYYMM}.md`
+
+### 前置要求
+
+```bash
+# 确保安装了 SOCKS 代理支持（访问远程 API 需要）
+pip install httpx socksio
+```
+
+---
+
+## 📊 Excel 对比表生成（Skill）
+
+项目内置了 `/gen-excel-report` Skill，可将指定目录下的 Markdown 月度报告一键整理为 Excel 质量对比表。
+
+### 使用方式
+
+```
+/gen-excel-report <reports_dir> [output_name]
+```
+
+**示例：**
+
+```
+# 将 reports/202603/ 下所有报告生成 Excel
+/gen-excel-report reports/202603
+
+# 指定输出文件名
+/gen-excel-report reports/202603 upstream_community_report_202603
+```
+
+### 功能说明
+
+- **自动发现**：扫描目录内所有 `*_community_quality_monthly_*.md` 文件，无需手动指定社区列表
+- **智能解析**：从每份报告的主报告段落提取 13 项核心指标数据
+- **样式复用**：完全套用 `reports/template/report-template.xlsx` 的字体、颜色、边框、行高列宽
+- **颜色编码**：改善指标绿色加粗，下降指标红色加粗，上月数据灰色显示
+- **输出位置**：`<reports_dir>/<output_name>.xlsx`，默认文件名为 `upstream_community_report_<dirname>.xlsx`
+
+### 前置要求
+
+```bash
+pip install openpyxl
+```
+
+> 需先运行 `/gen-quality-report` 生成 Markdown 报告，再运行本 Skill 生成 Excel。
 
 ---
 
