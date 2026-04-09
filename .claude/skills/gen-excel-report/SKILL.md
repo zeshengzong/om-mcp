@@ -45,7 +45,6 @@ python3 .claude/skills/gen-excel-report/gen_excel_report.py $ARGUMENTS
 | 错误 | 处理方式 |
 |------|----------|
 | 目录不存在 | 提示用户确认路径 |
-| 目录内无 `.md` 文件 | 提示先运行 `/gen-quality-report` 生成报告 |
 | 模板文件缺失 | 提示确认 `reports/template/report-template.xlsx` 存在 |
 | `openpyxl` 未安装 | 提示 `pip install openpyxl` |
 

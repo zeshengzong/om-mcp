@@ -10,9 +10,12 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "mcp[cli]",
-    "httpx",
+    "httpx[socks]",
     "pyyaml",
 ]
 
 [project.scripts]
 om-mcp = "server:main"
+
+[tool.setuptools.packages.find]
+exclude = ["reports*", "test*", "api-docs*", "__pycache__*"]

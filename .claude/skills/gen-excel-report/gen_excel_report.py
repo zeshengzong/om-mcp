@@ -155,6 +155,47 @@ def parse_row(sec, label):
         return m.group(1).strip(), m.group(2).strip()
     return "—", "—"
 
+def _parse_single_col_row_value(sec, label_re):
+    """Extract value from a markdown row like: | label | **value** | ... |"""
+    pat = rf"\|\s*{label_re}\s*\|\s*(?:\*\*)?([^|*]+?)(?:\*\*)?\s*\|"
+    m = re.search(pat, sec)
+    return m.group(1).strip() if m else None
+
+def parse_download_ytd(sec):
+    """
+    Parse download metric as (curr_raw, prev_raw).
+
+    Supports both formats:
+    1) Standard compare table row: | 年初至今下载量 | **curr** | prev |
+    2) MindIE-style YTD rows:
+       | 年初累计（3月 YTD，截至今日） | **curr** | ... |
+       | 2月 YTD | prev | ... |
+    """
+    # Format 1: old/standard reports
+    curr_raw, prev_raw = parse_row(sec, "年初至今下载量")
+    if extract_num(curr_raw) is not None:
+        return curr_raw, prev_raw
+
+    # Format 2: YTD rows with free-form labels
+    curr_raw = _parse_single_col_row_value(sec, r"年初(?:至今|累计)[^|]*YTD[^|]*")
+    prev_raw = _parse_single_col_row_value(sec, r"(?:上月\s*YTD|\d{1,2}月\s*YTD)[^|]*")
+
+    if extract_num(curr_raw) is not None and extract_num(prev_raw) is not None:
+        return curr_raw, prev_raw
+
+    # Format 3: fallback from explanatory formula, e.g. 3月YTD(56.20) − 2月YTD(31.77)
+    if curr_raw is None or extract_num(curr_raw) is None:
+        m_curr = re.search(r"\d{1,2}月\s*YTD\((\d+(?:\.\d+)?)\)", sec)
+        if m_curr:
+            curr_raw = m_curr.group(1)
+
+    if prev_raw is None or extract_num(prev_raw) is None:
+        m_prev = re.search(r"\d{1,2}月\s*YTD\(\d+(?:\.\d+)?\)\s*[−-]\s*\d{1,2}月\s*YTD\((\d+(?:\.\d+)?)\)", sec)
+        if m_prev:
+            prev_raw = m_prev.group(1)
+
+    return (curr_raw or "—"), (prev_raw or "—")
+
 # ── Report parser ──────────────────────────────────────────────────────────────
 def parse_report(filepath):
     """
@@ -204,7 +245,7 @@ def parse_report(filepath):
 
     # 五、社区下载量
     s = parse_section(content, r"^##\s+五[、.]")
-    metrics["download"] = parse_row(s, "年初至今下载量")
+    metrics["download"] = parse_download_ytd(s)
 
     # 六、Issue 响应效率（取平均值）
     s = parse_section(content, r"^##\s+六[、.]")

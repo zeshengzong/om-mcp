@@ -221,7 +221,7 @@ A: 使用默认值 `""`，在函数内部用 `if param:` 判断是否传入。
 - 指标 4/9/10 仅返回汇总值，无月度拆分
 
 **月度报告输出规则：**
-- 报告保存至 `reports/` 目录
+- 报告保存至 `reports/{YYYYMM}` 目录
 - 文件命名格式：`{community}_community_quality_monthly_{YYYYMM}.md`
 - 示例：`openeuler_community_quality_monthly_202603.md`
 - **报告完整性检查（保存前必须逐项核对）**：报告必须包含以下全部 13 项，数据不可用时写"暂无数据"或"API错误"，不得整节省略：

@@ -20,7 +20,7 @@ async def get(path: str, params: dict = None, base_url: str = API_BASE_URL) -> d
     url = f"{base_url}{path}"
     logger.info("GET %s params=%s", url, params)
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, proxy=None, trust_env=False) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             result = resp.json()
@@ -39,7 +39,7 @@ async def post(path: str, body: dict = None, base_url: str = API_BASE_URL) -> di
     payload = body or {}
     logger.info("POST %s body=%s", url, json.dumps(payload, ensure_ascii=False))
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, proxy=None, trust_env=False) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             result = resp.json()
