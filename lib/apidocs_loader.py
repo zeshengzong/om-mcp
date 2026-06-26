@@ -158,11 +158,16 @@ def _infer_params(params_list: list, param_type: str) -> List[ParamDef]:
 
 def _infer_single_param(item: dict, param_type: str) -> ParamDef:
     data_type = _TYPE_MAP.get((item.get("dataType") or "").lower(), "str")
+    
+    # 处理默认值
+    default = item.get("defaultValue")
+    if data_type == "list" and default is None:
+        default = []
 
     return ParamDef(
         name=item.get("name"),
         type=data_type,
-        default=item.get("defaultValue"),
+        default=default,
         required=item.get("required") or False,
         description=item.get("description") or "",
         body_key=item.get("name"),

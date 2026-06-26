@@ -7,7 +7,7 @@ from typing import Any, List, Dict, Optional
 @dataclass
 class ParamDef:
     name: str
-    type: str           # 'str' | 'int'
+    type: str           # 'str' | 'int' | 'list'
     default: Any
     required: bool
     description: str
@@ -59,14 +59,19 @@ def _parse_template(data: dict, filename: str) -> ToolTemplate:
         if not name:
             raise ValueError(f"Template {filename}: param missing 'name'")
         param_type = p.get("type", "str")
-        if param_type not in ("str", "int"):
+        if param_type not in ("str", "int", "list"):
             raise ValueError(f"Template {filename}: param '{name}' has unsupported type '{param_type}'")
 
-        # default: str→"", int→0 if not explicitly set
+        # default: str→"", int→0, list→[] if not explicitly set
         if "default" in p:
             default = p["default"]
         else:
-            default = "" if param_type == "str" else 0
+            if param_type == "str":
+                default = ""
+            elif param_type == "int":
+                default = 0
+            else:  # list
+                default = []
 
         params.append(ParamDef(
             name=name,

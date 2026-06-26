@@ -1,5 +1,6 @@
 """动态生成 MCP 工具函数并注册到 FastMCP 实例"""
 import inspect
+import json
 from typing import List
 from mcp.server.fastmcp import FastMCP
 from lib.template_loader import ToolTemplate
@@ -22,7 +23,7 @@ def _make_tool_function(template: ToolTemplate):
     sig = _build_signature(template)
 
     async def tool_fn(**kwargs):
-        # 1. COMMUNITY_MAP 归一化
+        # 1. COMMUNITY_MAP 归一化 + list 类型参数解析
         normalized_params = {}
         community = None
         for param_def in template.params:
@@ -36,6 +37,15 @@ def _make_tool_function(template: ToolTemplate):
                     return f"未找到社区 '{value}'，可用社区（小写）：{available}"
                 value = mapped.lower()
                 community = value  # 提取 community 用于后续 API 调用
+
+            # 解析 list 类型参数（JSON 字符串 -> list）
+            if param_def.type == "list" and value:
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except json.JSONDecodeError:
+                        # 如果不是有效的 JSON，尝试按逗号分割
+                        value = [item.strip() for item in value.split(",") if item.strip()]
 
             normalized_params[param_def.name] = value
 
@@ -69,6 +79,8 @@ def _make_tool_function(template: ToolTemplate):
                 if param_def.type == "str" and not value:
                     continue
                 if param_def.type == "int" and value == 0:
+                    continue
+                if param_def.type == "list" and (not value or len(value) == 0):
                     continue
 
             # 使用 body_key 别名
@@ -119,6 +131,8 @@ def _build_signature(template: ToolTemplate) -> inspect.Signature:
         # 类型映射
         if param_def.type == "int":
             annotation = int
+        elif param_def.type == "list":
+            annotation = str  # MCP 工具参数只能是 str 或 int，list 通过 JSON 字符串传递
         else:
             annotation = str
 
@@ -152,6 +166,10 @@ def _build_docstring(template: ToolTemplate) -> str:
         lines.append("Args:")
         for param_def in template.params:
             req_str = "（必填）" if param_def.required else "（可选）"
-            lines.append(f"    {param_def.name}: {param_def.description}{req_str}")
+            type_hint = "JSON 数组字符串" if param_def.type == "list" else ""
+            desc = param_def.description
+            if type_hint:
+                desc = f"{desc}，格式: {type_hint}"
+            lines.append(f"    {param_def.name}: {desc}{req_str}")
 
     return "\n".join(lines)
