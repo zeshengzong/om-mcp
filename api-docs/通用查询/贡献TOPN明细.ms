@@ -29,7 +29,7 @@
   "headers" : [ ],
   "paths" : [ ],
   "responseBody" : "{\n    \"code\": -1,\n    \"message\": \"系统内部出现错误\",\n    \"data\": null,\n    \"timestamp\": 1761792437511,\n    \"executeTime\": 11\n}",
-  "description" : null,
+  "description" : "获取指定周期下不同统计维度下指定贡献数量，统计维度支持：开发者维度-user、组织维度-company_type、SIG维度-sig、仓库维度-repo；贡献类型(event)支持：基础贡献-pr(PR数)/issue(Issue数)/comment(评论数)/addcode(新增代码行数)，比例类-pr_ratio(PR占比)/issue_ratio(Issue占比)，时长类-pr_avg_reply_time(PR平均响应时长)/pr_avg_closed_time(PR平均关闭时长)/issue_avg_reply_time(Issue平均响应时长)/issue_avg_closed_time(Issue平均关闭时长)，Issue解决类-resolved_ratio(解决率)/avg_resolved_time(平均解决时长，仅 metric 为 repo 或 company_type 时支持)",
   "requestBodyDefinition" : {
     "name" : "root",
     "value" : "",
@@ -44,8 +44,8 @@
     "children" : [ {
       "name" : "start",
       "value" : "1730419200000",
-      "description" : "",
-      "required" : false,
+      "description" : "开始时间",
+      "required" : true,
       "dataType" : "Long",
       "type" : null,
       "defaultValue" : null,
@@ -56,8 +56,8 @@
     }, {
       "name" : "end",
       "value" : "1761389420295",
-      "description" : "",
-      "required" : false,
+      "description" : "结束时间",
+      "required" : true,
       "dataType" : "Long",
       "type" : null,
       "defaultValue" : null,
@@ -68,7 +68,7 @@
     }, {
       "name" : "source",
       "value" : "",
-      "description" : "",
+      "description" : "来源平台",
       "required" : false,
       "dataType" : "String",
       "type" : null,
@@ -80,7 +80,7 @@
     }, {
       "name" : "orgList",
       "value" : "",
-      "description" : "",
+      "description" : "组织",
       "required" : false,
       "dataType" : "Array",
       "type" : null,
@@ -92,8 +92,8 @@
     }, {
       "name" : "community",
       "value" : "mindcluster",
-      "description" : "",
-      "required" : false,
+      "description" : "社区",
+      "required" : true,
       "dataType" : "String",
       "type" : null,
       "defaultValue" : null,
@@ -104,7 +104,7 @@
     }, {
       "name" : "private",
       "value" : "",
-      "description" : "",
+      "description" : "公私仓",
       "required" : false,
       "dataType" : "String",
       "type" : null,
@@ -116,8 +116,8 @@
     }, {
       "name" : "event",
       "value" : "pr",
-      "description" : "",
-      "required" : false,
+      "description" : "贡献类型，可选值：pr/issue/comment/addcode/pr_ratio/issue_ratio/pr_avg_reply_time/pr_avg_closed_time/issue_avg_reply_time/issue_avg_closed_time/resolved_ratio/avg_resolved_time（resolved_ratio、avg_resolved_time 仅 metric 为 repo 或 company_type 时支持）",
+      "required" : true,
       "dataType" : "String",
       "type" : null,
       "defaultValue" : null,
@@ -128,8 +128,8 @@
     }, {
       "name" : "interval",
       "value" : "week",
-      "description" : "",
-      "required" : false,
+      "description" : "时间周期",
+      "required" : true,
       "dataType" : "String",
       "type" : null,
       "defaultValue" : null,
@@ -140,8 +140,8 @@
     }, {
       "name" : "metric",
       "value" : "user",
-      "description" : "",
-      "required" : false,
+      "description" : "统计维度",
+      "required" : true,
       "dataType" : "String",
       "type" : null,
       "defaultValue" : null,
@@ -152,7 +152,7 @@
     }, {
       "name" : "metricVal",
       "value" : "",
-      "description" : "",
+      "description" : "统计维度值（只有开发者维度下使用，对应 metric_value_arr）",
       "required" : false,
       "dataType" : "Array",
       "type" : null,
@@ -173,6 +173,30 @@
         "expression" : "^[a-zA-Z0-9_\\-]*$",
         "children" : [ ]
       } ]
+    }, {
+      "name" : "internalList",
+      "value" : "",
+      "description" : "内外部",
+      "required" : false,
+      "dataType" : "Array",
+      "type" : null,
+      "defaultValue" : null,
+      "validateType" : "",
+      "error" : "",
+      "expression" : "",
+      "children" : [ ]
+    }, {
+      "name" : "topn",
+      "value" : "10",
+      "description" : "top 数量，默认 10",
+      "required" : false,
+      "dataType" : "Integer",
+      "type" : null,
+      "defaultValue" : null,
+      "validateType" : "",
+      "error" : "",
+      "expression" : "",
+      "children" : [ ]
     } ]
   },
   "responseBodyDefinition" : {

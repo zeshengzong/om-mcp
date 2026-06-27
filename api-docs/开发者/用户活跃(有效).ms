@@ -17,7 +17,7 @@
   "headers" : [ ],
   "paths" : [ ],
   "responseBody" : "{\n    \"code\": 1,\n    \"message\": \"success\",\n    \"data\": [{\n        \"level_type\": \"D0\",\n        \"date\": \"2024-11-01\",\n        \"increase\": 0\n    }, {\n        \"level_type\": \"D0\",\n        \"date\": \"2024-11-02\",\n        \"increase\": 0\n    }, {\n        \"level_type\": \"D0\",\n        \"date\": \"2025-05-12\",\n        \"increase\": 2\n    }, {\n        \"level_type\": \"D0\",\n        \"date\": \"2025-05-13\",\n        \"increase\": 1\n    }, {\n        \"level_type\": \"D0\",\n        \"date\": \"2025-05-14\",\n        \"increase\": 1\n    }],\n    \"timestamp\": 1747281186456,\n    \"executeTime\": 6\n}",
-  "description" : null,
+  "description" : "获取活跃开发者数量，支持用户级别（D0/D1/D2），周期（天/周/月）维度",
   "requestBodyDefinition" : {
     "name" : "",
     "value" : "",
@@ -32,8 +32,8 @@
     "children" : [ {
       "name" : "start",
       "value" : "1730419200000",
-      "description" : "",
-      "required" : false,
+      "description" : "开始时间",
+      "required" : true,
       "dataType" : "Long",
       "type" : null,
       "defaultValue" : null,
@@ -44,8 +44,8 @@
     }, {
       "name" : "end",
       "value" : "1747211237554",
-      "description" : "",
-      "required" : false,
+      "description" : "结束时间",
+      "required" : true,
       "dataType" : "Long",
       "type" : null,
       "defaultValue" : null,
@@ -56,7 +56,7 @@
     }, {
       "name" : "orgList",
       "value" : "",
-      "description" : "",
+      "description" : "组织",
       "required" : false,
       "dataType" : "Array",
       "type" : null,
@@ -68,7 +68,7 @@
     }, {
       "name" : "source",
       "value" : "",
-      "description" : "",
+      "description" : "来源平台",
       "required" : false,
       "dataType" : "String",
       "type" : null,
@@ -80,7 +80,7 @@
     }, {
       "name" : "internalList",
       "value" : "",
-      "description" : "",
+      "description" : "内外部",
       "required" : false,
       "dataType" : "Array",
       "type" : null,
@@ -104,7 +104,7 @@
     }, {
       "name" : "private",
       "value" : "",
-      "description" : "",
+      "description" : "公私仓",
       "required" : false,
       "dataType" : "String",
       "type" : null,
@@ -116,8 +116,8 @@
     }, {
       "name" : "community",
       "value" : "openubmc",
-      "description" : "",
-      "required" : false,
+      "description" : "社区",
+      "required" : true,
       "dataType" : "String",
       "type" : null,
       "defaultValue" : null,
@@ -128,8 +128,8 @@
     }, {
       "name" : "levelList",
       "value" : "",
-      "description" : "",
-      "required" : false,
+      "description" : "用户级别",
+      "required" : true,
       "dataType" : "Array",
       "type" : null,
       "defaultValue" : null,
@@ -176,8 +176,8 @@
     }, {
       "name" : "interval",
       "value" : "daily",
-      "description" : "",
-      "required" : false,
+      "description" : "时间周期",
+      "required" : true,
       "dataType" : "String",
       "type" : null,
       "defaultValue" : null,

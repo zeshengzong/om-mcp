@@ -2,9 +2,7 @@ import httpx
 import logging
 import json
 import os
-from tools.generate_token import generate_hmac_token
 
-# 统一使用远程 API 地址
 API_BASE_URL = "https://datastat.osinfra.cn/server"
 
 logger = logging.getLogger("om-mcp")
@@ -19,13 +17,9 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 
 
-def _get_api_token(community: str = "") -> str:
-    """生成 API token，使用 community + secret 作为数据"""
-    secret = os.getenv("MAGIC_API_TOKEN")
-    if not secret:
-        return ""
-    data = f"{community}{secret}"
-    return generate_hmac_token(data, secret)
+def _get_mcp_key() -> str:
+    """从环境变量获取 MAGIC_API_TOKEN"""
+    return os.getenv("MAGIC_API_TOKEN", "")
 
 
 async def get(
@@ -33,9 +27,9 @@ async def get(
 ) -> dict:
     url = f"{base_url}{path}"
     headers = {}
-    token = _get_api_token(community)
-    if token:
-        headers["api-token"] = token
+    mcp_key = _get_mcp_key()
+    if mcp_key:
+        headers["mcp-key"] = mcp_key
     logger.info("GET %s params=%s", url, params)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -64,9 +58,9 @@ async def post(
     url = f"{base_url}{path}"
     payload = body or {}
     headers = {}
-    token = _get_api_token(community)
-    if token:
-        headers["api-token"] = token
+    mcp_key = _get_mcp_key()
+    if mcp_key:
+        headers["mcp-key"] = mcp_key
     logger.info("POST %s body=%s", url, json.dumps(payload, ensure_ascii=False))
     try:
         async with httpx.AsyncClient(timeout=30) as client:
