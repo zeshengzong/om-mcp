@@ -14,7 +14,7 @@ COMMUNITY_MAP = {
     "cannopen":            "cannopen",
     "mindie":              "mindie",
     "mindstudio":          "mindstudio",
-    "mindseriessdk":       "mindseriessdk",
+    "mindsdk":             "mindsdk",
     "mindcluster":         "mindcluster",
     "pta":                 "pta",
     "unifiedbus":          "unifiedbus",
@@ -28,6 +28,7 @@ COMMUNITY_MAP = {
     "ascendnpuir":         "ascendnpuir",
     "boostkit":            "boostkit",
     "opensource":          "opensource",
+    "openpangu":           "openpangu",
 }
 
 # 指标说明（用于格式化输出）
