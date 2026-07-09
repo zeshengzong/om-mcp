@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["CLAUDE.md"],
+  "skills": {
+    "paths": [".opencode/skills"]
+  },
+  "mcp": {
+    "om-metrics": {
+      "type": "local",
+      "command": [".venv/bin/python", "server.py"],
+      "enabled": true
+    }
+  },
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "python3 *": "allow",
+      ".venv/bin/python *": "allow"
+    }
+  }
+}
